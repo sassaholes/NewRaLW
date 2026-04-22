@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass, asdict
 from typing import Iterable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
 DUCKDUCKGO_HTML = "https://duckduckgo.com/html/?q={query}"
@@ -119,18 +119,30 @@ def fetch_html(url: str, timeout: int = 12) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+def unwrap_ddg_redirect(url: str) -> str:
+    """Extract destination URL from DuckDuckGo redirect links when present."""
+    parsed = urlparse(url)
+    if "duckduckgo.com" not in parsed.netloc:
+        return url
+
+    query = parse_qs(parsed.query)
+    uddg = query.get("uddg")
+    if not uddg:
+        return url
+    return unquote(uddg[0])
+
+
 def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     mentions: list[Mention] = []
 
     anchor_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        r'<a[^>]*(?:class="[^"]*result__a[^"]*"|data-testid="result-title-a")[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
         re.IGNORECASE | re.DOTALL,
     )
 
     # Snippets generally appear near anchors in DDG HTML results.
     snippet_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>|'
-        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?<div[^>]*class="result__snippet"[^>]*>(?P<snippet_div>.*?)</div>',
+        r'(?:class="[^"]*result__snippet[^"]*"|data-result-snippet="1")[^>]*>(?P<snippet>.*?)</(?:a|div|span)>',
         re.IGNORECASE | re.DOTALL,
     )
 
@@ -138,12 +150,12 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     snippets = list(snippet_pattern.finditer(page_html))
 
     for idx, match in enumerate(anchors):
-        link = html.unescape(match.group("href"))
+        link = unwrap_ddg_redirect(html.unescape(match.group("href")))
         title = clean_text(match.group("title"))
 
         snippet = ""
         if idx < len(snippets):
-            snippet = clean_text(snippets[idx].group("snippet") or snippets[idx].group("snippet_div") or "")
+            snippet = clean_text(snippets[idx].group("snippet") or "")
 
         mentions.append(
             Mention(
