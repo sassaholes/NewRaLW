@@ -4,6 +4,23 @@ A local-first Python CLI app that looks up an **artist name** and/or **song titl
 
 > ⚠️ Important: This project is designed for lawful research. Always respect each site's Terms of Service, robots rules, and local laws.
 
+## Easiest way: use it in your browser (no coding)
+
+If you want an app-like experience, do this in **Windows Command Prompt**:
+
+```bat
+cd C:\NewRaLW
+run_web_app.bat
+```
+
+Then open this in your browser:
+
+```text
+http://127.0.0.1:8000
+```
+
+Type artist/song, click **Search**, and results show in a table.
+
 ## First question: do you need to download files first?
 
 Yes — you need the project folder on your PC first.
