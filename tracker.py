@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass, asdict
 from typing import Iterable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
 DUCKDUCKGO_HTML = "https://duckduckgo.com/html/?q={query}"
@@ -25,6 +25,17 @@ class Mention:
     title: str
     snippet: str
     matched_query: str
+
+
+@dataclass
+class SearchDiagnostics:
+    attempted_queries: int
+    failed_queries: int
+    last_error: str = ""
+
+
+class SearchFailedError(RuntimeError):
+    """Raised when every upstream search request fails."""
 
 
 def build_queries(artist: str | None, song: str | None, markets: list[str]) -> list[str]:
@@ -108,18 +119,30 @@ def fetch_html(url: str, timeout: int = 12) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+def unwrap_ddg_redirect(url: str) -> str:
+    """Extract destination URL from DuckDuckGo redirect links when present."""
+    parsed = urlparse(url)
+    if "duckduckgo.com" not in parsed.netloc:
+        return url
+
+    query = parse_qs(parsed.query)
+    uddg = query.get("uddg")
+    if not uddg:
+        return url
+    return unquote(uddg[0])
+
+
 def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     mentions: list[Mention] = []
 
     anchor_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        r'<a[^>]*(?:class="[^"]*result__a[^"]*"|data-testid="result-title-a")[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
         re.IGNORECASE | re.DOTALL,
     )
 
     # Snippets generally appear near anchors in DDG HTML results.
     snippet_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>|'
-        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?<div[^>]*class="result__snippet"[^>]*>(?P<snippet_div>.*?)</div>',
+        r'(?:class="[^"]*result__snippet[^"]*"|data-result-snippet="1")[^>]*>(?P<snippet>.*?)</(?:a|div|span)>',
         re.IGNORECASE | re.DOTALL,
     )
 
@@ -127,12 +150,12 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     snippets = list(snippet_pattern.finditer(page_html))
 
     for idx, match in enumerate(anchors):
-        link = html.unescape(match.group("href"))
+        link = unwrap_ddg_redirect(html.unescape(match.group("href")))
         title = clean_text(match.group("title"))
 
         snippet = ""
         if idx < len(snippets):
-            snippet = clean_text(snippets[idx].group("snippet") or snippets[idx].group("snippet_div") or "")
+            snippet = clean_text(snippets[idx].group("snippet") or "")
 
         mentions.append(
             Mention(
@@ -160,17 +183,25 @@ def run_search(
     timeout: int,
     max_queries: int | None = None,
 ) -> list[Mention]:
+) -> tuple[list[Mention], SearchDiagnostics]:
+def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
     queries = build_queries(artist, song, markets)
     if max_queries is not None:
         queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
     failed_queries = 0
 
+    failed_queries = 0
+    last_error = ""
+
     for q in queries:
         try:
             all_mentions.extend(search_ddg(q, timeout=timeout))
         except (URLError, HTTPError, TimeoutError):
             failed_queries += 1
+        except (URLError, HTTPError, TimeoutError) as exc:
+            failed_queries += 1
+            last_error = str(exc)
             continue
 
     if queries and failed_queries == len(queries):
@@ -186,7 +217,19 @@ def run_search(
         seen.add(m.url)
         deduped.append(m)
 
-    return deduped
+    diagnostics = SearchDiagnostics(
+        attempted_queries=len(queries),
+        failed_queries=failed_queries,
+        last_error=last_error,
+    )
+
+    if queries and failed_queries == len(queries):
+        raise SearchFailedError(
+            "All search requests failed. This usually means your network, proxy, or firewall blocked the request. "
+            f"Last error: {last_error or 'unknown error'}"
+        )
+
+    return deduped, diagnostics
 
 
 def write_json(path: str, rows: list[Mention]) -> None:
@@ -227,10 +270,22 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
-    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+    try:
+        rows, diagnostics = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+    except SearchFailedError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+
     rows = rows[: max(args.max_results, 0)]
 
     print(json.dumps([asdict(r) for r in rows], ensure_ascii=False, indent=2))
+
+    if diagnostics.failed_queries:
+        print(
+            f"\nWarning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} queries failed. "
+            "Results may be incomplete.",
+            file=sys.stderr,
+        )
 
     if args.out:
         write_json(args.out, rows)
