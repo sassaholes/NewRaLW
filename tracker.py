@@ -153,15 +153,30 @@ def search_ddg(query: str, timeout: int = 12) -> list[Mention]:
     return parse_ddg_results(page_html, query)
 
 
-def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
+def run_search(
+    artist: str | None,
+    song: str | None,
+    markets: list[str],
+    timeout: int,
+    max_queries: int | None = None,
+) -> list[Mention]:
     queries = build_queries(artist, song, markets)
+    if max_queries is not None:
+        queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
+    failed_queries = 0
 
     for q in queries:
         try:
             all_mentions.extend(search_ddg(q, timeout=timeout))
         except (URLError, HTTPError, TimeoutError):
+            failed_queries += 1
             continue
+
+    if queries and failed_queries == len(queries):
+        raise RuntimeError(
+            "All search requests failed. Your network may be blocking duckduckgo.com."
+        )
 
     seen: set[str] = set()
     deduped: list[Mention] = []

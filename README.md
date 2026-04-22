@@ -21,6 +21,15 @@ http://127.0.0.1:8000
 
 Type artist/song, click **Search**, and results show in a table.
 
+## Tracker vs Web App (important)
+
+- `tracker.py` = command-line tool (prints JSON in terminal, optional CSV/JSON file output).
+- `web_app.py` = local website UI (form + results table in browser).
+- `run_tracker.bat` runs `tracker.py`, but it needs arguments like `--artist` and/or `--song`.
+- `run_web_app.bat` starts the browser UI server at `http://127.0.0.1:8000`.
+
+If `run_tracker.bat` looked like it did nothing, it was probably started without arguments. It now prints usage/help and an example command.
+
 ## First question: do you need to download files first?
 
 Yes — you need the project folder on your PC first.
