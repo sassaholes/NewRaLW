@@ -13,7 +13,7 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-from tracker import Mention, run_search
+from tracker import Mention, SearchFailedError, run_search
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -44,6 +44,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     empty_state = (
         "<p>No results yet. Enter artist/song and click Search. "
         "If you keep getting 0 rows, try timeout 12-20 and check network access to duckduckgo.com.</p>"
+        "If you keep getting 0 rows, try timeout 10-20 and check network access to duckduckgo.com.</p>"
         if not rows and not error
         else ""
     )
@@ -77,10 +78,10 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
       <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
       <br />
-      <label><input type="checkbox" name="markets" value="global" checked /> Global</label>
-      <label><input type="checkbox" name="markets" value="douyin" checked /> Douyin</label>
-      <label><input type="checkbox" name="markets" value="tiktok" checked /> TikTok</label>
-      <label><input type="checkbox" name="markets" value="youtube" checked /> YouTube</label>
+      <label><input type="checkbox" name="markets" value="global" {checked("global")} /> Global</label>
+      <label><input type="checkbox" name="markets" value="douyin" {checked("douyin")} /> Douyin</label>
+      <label><input type="checkbox" name="markets" value="tiktok" {checked("tiktok")} /> TikTok</label>
+      <label><input type="checkbox" name="markets" value="youtube" {checked("youtube")} /> YouTube</label>
       <br /><br />
       <button type="submit">Search</button>
     </form>
@@ -144,12 +145,14 @@ class AppHandler(BaseHTTPRequestHandler):
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
         max_results_raw = (form.get("max_results") or ["0"])[0]
         timeout_raw = (form.get("timeout") or ["12"])[0]
+        timeout_raw = (form.get("timeout") or ["4"])[0]
 
         view_form = {
             "artist": artist or "",
             "song": song or "",
             "max_results": max_results_raw,
             "timeout": timeout_raw,
+            "markets": ",".join(markets),
         }
 
         try:
@@ -158,8 +161,19 @@ class AppHandler(BaseHTTPRequestHandler):
             rows = run_search(artist, song, markets, timeout=timeout, max_queries=None)
             if max_results > 0:
                 rows = rows[:max_results]
+            rows, diagnostics = run_search(artist, song, markets, timeout=timeout, max_queries=6)
+            rows = rows[:max_results]
+            error = ""
+            if diagnostics.failed_queries:
+                error = (
+                    f"Warning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} requests failed; "
+                    "results may be incomplete."
+                )
+            self._send_html(render_page(rows=rows, form=view_form, error=error))
+        except (ValueError, SearchFailedError) as exc:
+            rows = run_search(artist, song, markets, timeout=timeout)[:max_results]
             self._send_html(render_page(rows=rows, form=view_form))
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             self._send_html(render_page(error=str(exc), form=view_form), status=400)
 
 
