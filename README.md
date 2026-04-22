@@ -1,8 +1,21 @@
 # Global Music Usage Finder
 
-A local-first Python CLI app that looks up an **artist name** and/or **song title** and scans multiple web surfaces (including foreign markets such as Douyin) for likely usage mentions.
+A local-first Python app that looks up an **artist name** and/or **song title** and scans multiple web surfaces (including foreign markets such as Douyin) for likely usage mentions. It now supports **no-key** search across DuckDuckGo, Bing, and Google.
 
 > ⚠️ Important: This project is designed for lawful research. Always respect each site's Terms of Service, robots rules, and local laws.
+
+## Absolute easiest: run as an app (Windows)
+
+1. Double-click `start_app.bat`.
+2. Your browser opens automatically to `http://127.0.0.1:8000`.
+3. Search artist/song in the form.
+
+If Windows asks which app to use for `.bat`, run from Command Prompt:
+
+```bat
+cd C:\NewRaLW
+start_app.bat
+```
 
 ## Easiest way: use it in your browser (no coding)
 
@@ -73,6 +86,7 @@ type results.json
 If `run_tracker.bat` does not work, use:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
@@ -87,18 +101,21 @@ cd C:\path\to\NewRaLW
 2) Run with Python launcher (`py`) from CMD:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 3) Or use the included batch wrapper (same result):
 
 ```bat
+run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 4) CSV output example:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --csv results.csv
 py tracker.py --artist "Adele" --song "Hello" --csv results.csv
 ```
 
@@ -119,6 +136,7 @@ py tracker.py --artist "Jay Chou" --song "青花瓷" --markets global douyin --m
 - `--artist`: Artist name.
 - `--song`: Song title.
 - `--markets`: One or more of `global`, `douyin`, `tiktok`, `youtube`.
+- `--engines`: One or more of `ddg`, `bing`, `google` (no keys).
 - `--max-results`: Max rows returned.
 - `--out`: JSON output path.
 - `--csv`: CSV output path.
