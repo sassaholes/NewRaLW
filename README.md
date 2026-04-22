@@ -4,6 +4,19 @@ A local-first Python CLI app that looks up an **artist name** and/or **song titl
 
 > ⚠️ Important: This project is designed for lawful research. Always respect each site's Terms of Service, robots rules, and local laws.
 
+## Absolute easiest: run as an app (Windows)
+
+1. Double-click `start_app.bat`.
+2. Your browser opens automatically to `http://127.0.0.1:8000`.
+3. Search artist/song in the form.
+
+If Windows asks which app to use for `.bat`, run from Command Prompt:
+
+```bat
+cd C:\NewRaLW
+start_app.bat
+```
+
 ## Easiest way: use it in your browser (no coding)
 
 If you want an app-like experience, do this in **Windows Command Prompt**:
