@@ -27,6 +27,17 @@ class Mention:
     matched_query: str
 
 
+@dataclass
+class SearchDiagnostics:
+    attempted_queries: int
+    failed_queries: int
+    last_error: str = ""
+
+
+class SearchFailedError(RuntimeError):
+    """Raised when every upstream search request fails."""
+
+
 def build_queries(artist: str | None, song: str | None, markets: list[str]) -> list[str]:
     base_bits = [b for b in [artist, song] if b]
     if not base_bits:
@@ -153,14 +164,26 @@ def search_ddg(query: str, timeout: int = 12) -> list[Mention]:
     return parse_ddg_results(page_html, query)
 
 
+def run_search(
+    artist: str | None,
+    song: str | None,
+    markets: list[str],
+    timeout: int,
+    max_queries: int | None = None,
+) -> tuple[list[Mention], SearchDiagnostics]:
 def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
     queries = build_queries(artist, song, markets)
     all_mentions: list[Mention] = []
 
+    failed_queries = 0
+    last_error = ""
+
     for q in queries:
         try:
             all_mentions.extend(search_ddg(q, timeout=timeout))
-        except (URLError, HTTPError, TimeoutError):
+        except (URLError, HTTPError, TimeoutError) as exc:
+            failed_queries += 1
+            last_error = str(exc)
             continue
 
     seen: set[str] = set()
@@ -171,7 +194,19 @@ def run_search(artist: str | None, song: str | None, markets: list[str], timeout
         seen.add(m.url)
         deduped.append(m)
 
-    return deduped
+    diagnostics = SearchDiagnostics(
+        attempted_queries=len(queries),
+        failed_queries=failed_queries,
+        last_error=last_error,
+    )
+
+    if queries and failed_queries == len(queries):
+        raise SearchFailedError(
+            "All search requests failed. This usually means your network, proxy, or firewall blocked the request. "
+            f"Last error: {last_error or 'unknown error'}"
+        )
+
+    return deduped, diagnostics
 
 
 def write_json(path: str, rows: list[Mention]) -> None:
@@ -212,10 +247,22 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
-    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+    try:
+        rows, diagnostics = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+    except SearchFailedError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+
     rows = rows[: max(args.max_results, 0)]
 
     print(json.dumps([asdict(r) for r in rows], ensure_ascii=False, indent=2))
+
+    if diagnostics.failed_queries:
+        print(
+            f"\nWarning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} queries failed. "
+            "Results may be incomplete.",
+            file=sys.stderr,
+        )
 
     if args.out:
         write_json(args.out, rows)
