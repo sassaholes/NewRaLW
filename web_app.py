@@ -31,6 +31,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
 
     def checked(value: str) -> str:
         return "checked" if value in selected_markets else ""
+    timeout = html.escape(form.get("timeout", "12"))
 
     table_rows = ""
     for r in rows:
@@ -140,7 +141,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
         max_results_raw = (form.get("max_results") or ["20"])[0]
-        timeout_raw = (form.get("timeout") or ["4"])[0]
+        timeout_raw = (form.get("timeout") or ["12"])[0]
 
         view_form = {
             "artist": artist or "",
@@ -163,6 +164,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 )
             self._send_html(render_page(rows=rows, form=view_form, error=error))
         except (ValueError, SearchFailedError) as exc:
+            rows = run_search(artist, song, markets, timeout=timeout)[:max_results]
+            self._send_html(render_page(rows=rows, form=view_form))
+        except ValueError as exc:
             self._send_html(render_page(error=str(exc), form=view_form), status=400)
 
 
