@@ -246,6 +246,8 @@ def run_search(
     engines: list[str],
 ) -> list[Mention]:
     queries = build_queries(artist, song, markets)
+    if max_queries is not None:
+        queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
 
     for q in queries:
@@ -340,6 +342,12 @@ def parse_args() -> argparse.Namespace:
         help="Search engines to use",
     )
     parser.add_argument("--max-results", type=int, default=50, help="Max result rows to keep")
+    parser.add_argument(
+        "--max-queries",
+        type=int,
+        default=None,
+        help="Limit how many generated queries are executed (default: all)",
+    )
     parser.add_argument("--timeout", type=int, default=12, help="HTTP timeout (seconds)")
     parser.add_argument("--out", type=str, default=None, help="Path to write JSON")
     parser.add_argument("--csv", type=str, default=None, help="Path to write CSV")
