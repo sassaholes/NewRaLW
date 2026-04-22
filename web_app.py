@@ -26,7 +26,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     artist = html.escape(form.get("artist", ""))
     song = html.escape(form.get("song", ""))
     max_results = html.escape(form.get("max_results", "20"))
-    timeout = html.escape(form.get("timeout", "4"))
+    timeout = html.escape(form.get("timeout", "12"))
 
     table_rows = ""
     for r in rows:
@@ -136,7 +136,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
         max_results_raw = (form.get("max_results") or ["20"])[0]
-        timeout_raw = (form.get("timeout") or ["4"])[0]
+        timeout_raw = (form.get("timeout") or ["12"])[0]
 
         view_form = {
             "artist": artist or "",
@@ -148,7 +148,7 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             max_results = max(0, int(max_results_raw))
             timeout = max(1, int(timeout_raw))
-            rows = run_search(artist, song, markets, timeout=timeout, max_queries=6)[:max_results]
+            rows = run_search(artist, song, markets, timeout=timeout)[:max_results]
             self._send_html(render_page(rows=rows, form=view_form))
         except ValueError as exc:
             self._send_html(render_page(error=str(exc), form=view_form), status=400)
