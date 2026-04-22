@@ -19,7 +19,18 @@ Then open this in your browser:
 http://127.0.0.1:8000
 ```
 
+`run_web_app.bat` now tries to open your browser automatically. If it does not, paste the URL manually.
+
 Type artist/song, click **Search**, and results show in a table.
+
+## Tracker vs Web App (important)
+
+- `tracker.py` = command-line tool (prints JSON in terminal, optional CSV/JSON file output).
+- `web_app.py` = local website UI (form + results table in browser).
+- `run_tracker.bat` runs `tracker.py`, but it needs arguments like `--artist` and/or `--song`.
+- `run_web_app.bat` starts the browser UI server at `http://127.0.0.1:8000`.
+
+If `run_tracker.bat` looked like it did nothing, it was probably started without arguments. It now prints usage/help and an example command.
 
 ## First question: do you need to download files first?
 
@@ -117,6 +128,7 @@ py tracker.py --artist "Jay Chou" --song "青花瓷" --markets global douyin --m
 
 - If `py` is not recognized, install Python from python.org and check **“Add Python to PATH”**.
 - If `python` works but `py` does not, replace `py` with `python` in all commands.
+- If you see a Python `SyntaxError`, re-download/update the repo files (the `.bat` launchers now run a compile check first and will show this clearly).
 - If you get zero results, retry with fewer markets and a larger timeout:
 
 ```bat
