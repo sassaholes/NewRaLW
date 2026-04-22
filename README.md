@@ -32,6 +32,8 @@ Then open this in your browser:
 http://127.0.0.1:8000
 ```
 
+`run_web_app.bat` now tries to open your browser automatically. If it does not, paste the URL manually.
+
 Type artist/song, click **Search**, and results show in a table.
 
 ## Tracker vs Web App (important)
