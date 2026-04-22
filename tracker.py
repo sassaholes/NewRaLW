@@ -182,10 +182,14 @@ def run_search(
     markets: list[str],
     timeout: int,
     max_queries: int | None = None,
+) -> list[Mention]:
 ) -> tuple[list[Mention], SearchDiagnostics]:
 def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
     queries = build_queries(artist, song, markets)
+    if max_queries is not None:
+        queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
+    failed_queries = 0
 
     failed_queries = 0
     last_error = ""
@@ -193,10 +197,17 @@ def run_search(artist: str | None, song: str | None, markets: list[str], timeout
     for q in queries:
         try:
             all_mentions.extend(search_ddg(q, timeout=timeout))
+        except (URLError, HTTPError, TimeoutError):
+            failed_queries += 1
         except (URLError, HTTPError, TimeoutError) as exc:
             failed_queries += 1
             last_error = str(exc)
             continue
+
+    if queries and failed_queries == len(queries):
+        raise RuntimeError(
+            "All search requests failed. Your network may be blocking duckduckgo.com."
+        )
 
     seen: set[str] = set()
     deduped: list[Mention] = []
