@@ -21,14 +21,13 @@ def checked(form: dict[str, str], field: str, value: str, default: set[str]) -> 
     return "checked" if value in effective else ""
 
 
-def render_page(rows: Optional[list[Mention]] = None, error: str = "", form: Optional[dict[str, str]] = None) -> bytes:
+def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[str, str] | None = None) -> bytes:
     rows = rows or []
     form = form or {}
 
     artist = html.escape(form.get("artist", ""))
     song = html.escape(form.get("song", ""))
     max_results = html.escape(form.get("max_results", "20"))
-    max_queries = html.escape(form.get("max_queries", "6"))
     timeout = html.escape(form.get("timeout", "12"))
 
     markets_default = {"global", "douyin", "tiktok", "youtube"}
@@ -81,9 +80,9 @@ def render_page(rows: Optional[list[Mention]] = None, error: str = "", form: Opt
     <form method="post" action="/search">
       <label>Artist <input name="artist" value="{artist}" placeholder="Adele" /></label>
       <label>Song <input name="song" value="{song}" placeholder="Hello" /></label>
-      <label>Max results <input name="max_results" value="{max_results}" size="4" /></label>
-      <label>Max queries <input name="max_queries" value="{max_queries}" size="4" /></label>
+      <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
+      <label>Max queries <input name="max_queries" value="{max_queries}" size="4" /></label>
       <br />
       <label><input type="checkbox" name="markets" value="global" {checked(form, 'markets', 'global', markets_default)} /> Global</label>
       <label><input type="checkbox" name="markets" value="douyin" {checked(form, 'markets', 'douyin', markets_default)} /> Douyin</label>
@@ -154,7 +153,6 @@ class AppHandler(BaseHTTPRequestHandler):
         markets = form_data.get("markets") or ["global", "douyin", "tiktok", "youtube"]
         engines = form_data.get("engines") or ["ddg", "bing", "google"]
         max_results_raw = (form_data.get("max_results") or ["20"])[0]
-        max_queries_raw = (form_data.get("max_queries") or ["6"])[0]
         timeout_raw = (form_data.get("timeout") or ["12"])[0]
 
         view_form = {
@@ -169,17 +167,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
         try:
             max_results = max(0, int(max_results_raw))
-            max_queries = max(0, int(max_queries_raw))
+            max_queries = max(1, int(max_queries_raw))
             timeout = max(1, int(timeout_raw))
-            rows, diagnostics = run_search(
-                artist,
-                song,
-                markets,
-                timeout=timeout,
-                engines=engines,
-                max_queries=max_queries,
-                include_diagnostics=True,
-            )
+            rows, diagnostics = run_search(artist, song, markets, timeout=timeout, engines=engines)
             if max_results > 0:
                 rows = rows[:max_results]
 

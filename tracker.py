@@ -13,7 +13,7 @@ import json
 import re
 import sys
 from dataclasses import asdict, dataclass
-from typing import Iterable, Optional, Tuple, Union
+from typing import Iterable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
@@ -46,7 +46,7 @@ class SearchFailedError(RuntimeError):
     """Raised when every upstream search request fails."""
 
 
-def build_queries(artist: Optional[str], song: Optional[str], markets: list[str]) -> list[str]:
+def build_queries(artist: str | None, song: str | None, markets: list[str]) -> list[str]:
     base_bits = [bit for bit in [artist, song] if bit]
     if not base_bits:
         raise ValueError("You must provide --artist and/or --song")
@@ -241,11 +241,22 @@ def run_search(
     artist: Optional[str],
     song: Optional[str],
     markets: list[str],
-    timeout: int = 12,
-    engines: Optional[list[str]] = None,
-    max_queries: Optional[int] = None,
-    include_diagnostics: bool = False,
-) -> Union[list[Mention], Tuple[list[Mention], SearchDiagnostics]]:
+    timeout: int,
+    engines: list[str],
+) -> list[Mention]:
+    queries = build_queries(artist, song, markets)
+    if max_queries is not None:
+        queries = queries[: max(max_queries, 0)]
+    all_mentions: list[Mention] = []
+
+    for q in queries:
+        for engine in engines:
+            try:
+                all_mentions.extend(search_engine(q, engine=engine, timeout=timeout))
+            except (URLError, HTTPError, TimeoutError, KeyError):
+                continue
+    max_queries: int | None = None,
+) -> tuple[list[Mention], SearchDiagnostics]:
     engines = engines or ["ddg", "bing", "google"]
     queries = build_queries(artist, song, markets)
     if max_queries is not None:
@@ -285,9 +296,7 @@ def run_search(
         seen.add(mention.url)
         deduped.append(mention)
 
-    if include_diagnostics:
-        return deduped, diagnostics
-    return deduped
+    return deduped, diagnostics
 
 
 def write_json(path: str, rows: list[Mention]) -> None:
@@ -325,6 +334,12 @@ def parse_args() -> argparse.Namespace:
         help="Search engines to use",
     )
     parser.add_argument("--max-results", type=int, default=50, help="Max result rows to keep")
+    parser.add_argument(
+        "--max-queries",
+        type=int,
+        default=None,
+        help="Limit how many generated queries are executed (default: all)",
+    )
     parser.add_argument("--timeout", type=int, default=12, help="HTTP timeout (seconds)")
     parser.add_argument("--out", type=str, default=None, help="Path to write JSON")
     parser.add_argument("--csv", type=str, default=None, help="Path to write CSV")
@@ -343,7 +358,6 @@ def main() -> None:
             args.markets,
             timeout=args.timeout,
             engines=args.engines,
-            include_diagnostics=True,
         )
     except SearchFailedError as exc:
         print(str(exc), file=sys.stderr)
