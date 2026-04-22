@@ -79,8 +79,9 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     <form method="post" action="/search">
       <label>Artist <input name="artist" value="{artist}" placeholder="Adele" /></label>
       <label>Song <input name="song" value="{song}" placeholder="Hello" /></label>
-      <label>Max results <input name="max_results" value="{max_results}" size="4" /></label>
+      <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
+      <label>Max queries <input name="max_queries" value="{max_queries}" size="4" /></label>
       <br />
       <label><input type="checkbox" name="markets" value="global" {checked(form, 'markets', 'global', markets_default)} /> Global</label>
       <label><input type="checkbox" name="markets" value="douyin" {checked(form, 'markets', 'douyin', markets_default)} /> Douyin</label>
@@ -157,6 +158,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "artist": artist or "",
             "song": song or "",
             "max_results": max_results_raw,
+            "max_queries": max_queries_raw,
             "timeout": timeout_raw,
             "markets": ",".join(markets),
             "engines": ",".join(engines),
@@ -164,6 +166,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         try:
             max_results = max(0, int(max_results_raw))
+            max_queries = max(1, int(max_queries_raw))
             timeout = max(1, int(timeout_raw))
             rows, diagnostics = run_search(artist, song, markets, timeout=timeout, engines=engines)
             if max_results > 0:
