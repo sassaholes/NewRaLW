@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Local CLI to discover artist/song usage mentions across global web markets.
 
-This version supports multiple no-key search engines (DuckDuckGo, Bing, Google).
+Supports no-key search across DuckDuckGo, Bing, and Google.
 """
-"""Local CLI to discover artist/song usage mentions across global web markets."""
 
 from __future__ import annotations
 
@@ -13,10 +12,10 @@ import html
 import json
 import re
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Iterable
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
 ENGINE_URLS = {
@@ -24,10 +23,6 @@ ENGINE_URLS = {
     "bing": "https://www.bing.com/search?q={query}",
     "google": "https://www.google.com/search?q={query}&hl=en",
 }
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
-from urllib.request import Request, urlopen
-
-DUCKDUCKGO_HTML = "https://duckduckgo.com/html/?q={query}"
 
 
 @dataclass
@@ -52,7 +47,7 @@ class SearchFailedError(RuntimeError):
 
 
 def build_queries(artist: str | None, song: str | None, markets: list[str]) -> list[str]:
-    base_bits = [b for b in [artist, song] if b]
+    base_bits = [bit for bit in [artist, song] if bit]
     if not base_bits:
         raise ValueError("You must provide --artist and/or --song")
 
@@ -64,24 +59,6 @@ def build_queries(artist: str | None, song: str | None, markets: list[str]) -> l
 
     if "douyin" in markets:
         queries.extend([f'site:douyin.com "{base}"', f'douyin "{base}" 音乐', f'douyin "{base}" 使用'])
-    usage_terms = [
-        "used in video",
-        "sound trend",
-        "viral clip",
-        "背景音乐",
-        "使用",
-        "热门配乐",
-    ]
-    queries.extend([f"{base} {term}" for term in usage_terms])
-
-    if "douyin" in markets:
-        queries.extend(
-            [
-                f'site:douyin.com "{base}"',
-                f'douyin "{base}" 音乐',
-                f'douyin "{base}" 使用',
-            ]
-        )
     if "tiktok" in markets:
         queries.extend([f'site:tiktok.com "{base}"', f'tiktok "{base}" sound'])
     if "youtube" in markets:
@@ -92,44 +69,43 @@ def build_queries(artist: str | None, song: str | None, markets: list[str]) -> l
 
 def dedupe_keep_order(items: Iterable[str]) -> list[str]:
     seen: set[str] = set()
-    out: list[str] = []
+    output: list[str] = []
     for item in items:
-        k = item.strip()
-        if not k or k in seen:
+        value = item.strip()
+        if not value or value in seen:
             continue
-        seen.add(k)
-        out.append(k)
-    return out
+        seen.add(value)
+        output.append(value)
+    return output
 
 
 def detect_platform(url: str) -> str:
-    u = url.lower()
-    if "douyin.com" in u:
+    normalized = url.lower()
+    if "douyin.com" in normalized:
         return "douyin"
-    if "tiktok.com" in u:
+    if "tiktok.com" in normalized:
         return "tiktok"
-    if "youtube.com" in u or "youtu.be" in u:
+    if "youtube.com" in normalized or "youtu.be" in normalized:
         return "youtube"
-    if "instagram.com" in u:
+    if "instagram.com" in normalized:
         return "instagram"
-    if "x.com" in u or "twitter.com" in u:
+    if "x.com" in normalized or "twitter.com" in normalized:
         return "x"
     return "web"
 
 
-def clean_text(s: str) -> str:
-    s = html.unescape(s)
-    s = re.sub(r"<[^>]+>", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
+def clean_text(raw: str) -> str:
+    text = html.unescape(raw)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def normalize_google_link(link: str) -> str:
-    # Convert /url?q=https://... form into clean target URLs.
     if link.startswith("/url?"):
         parsed = parse_qs(urlparse(link).query)
-        q = parsed.get("q")
-        if q and q[0].startswith("http"):
-            return q[0]
+        target = parsed.get("q")
+        if target and target[0].startswith("http"):
+            return target[0]
     return link
 
 
@@ -138,15 +114,13 @@ def is_valid_result_url(link: str) -> bool:
         return False
     if link.startswith("/"):
         return False
-    if "google.com/search" in link:
-        return False
-    if "accounts.google.com" in link:
+    if "google.com/search" in link or "accounts.google.com" in link:
         return False
     return link.startswith("http")
 
 
 def fetch_html(url: str, timeout: int = 12) -> str:
-    req = Request(
+    request = Request(
         url,
         headers={
             "User-Agent": (
@@ -154,29 +128,17 @@ def fetch_html(url: str, timeout: int = 12) -> str:
                 "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             ),
             "Accept-Language": "en-US,en;q=0.9",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-            )
         },
     )
-    with urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    with urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
-def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
-    mentions: list[Mention] = []
-    anchor_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
-        re.IGNORECASE | re.DOTALL,
-    )
-    snippet_pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?(?:<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>|<div[^>]*class="result__snippet"[^>]*>(?P<snippet_div>.*?)</div>)',
 def unwrap_ddg_redirect(url: str) -> str:
     """Extract destination URL from DuckDuckGo redirect links when present."""
     parsed = urlparse(url)
     if "duckduckgo.com" not in parsed.netloc:
         return url
-
     query = parse_qs(parsed.query)
     uddg = query.get("uddg")
     if not uddg:
@@ -191,8 +153,6 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
         r'<a[^>]*(?:class="[^"]*result__a[^"]*"|data-testid="result-title-a")[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
         re.IGNORECASE | re.DOTALL,
     )
-
-    # Snippets generally appear near anchors in DDG HTML results.
     snippet_pattern = re.compile(
         r'(?:class="[^"]*result__snippet[^"]*"|data-result-snippet="1")[^>]*>(?P<snippet>.*?)</(?:a|div|span)>',
         re.IGNORECASE | re.DOTALL,
@@ -204,27 +164,70 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     for idx, match in enumerate(anchors):
         link = unwrap_ddg_redirect(html.unescape(match.group("href")))
         title = clean_text(match.group("title"))
+        snippet = clean_text(snippets[idx].group("snippet")) if idx < len(snippets) else ""
 
-        snippet = ""
-        if idx < len(snippets):
-            snippet = clean_text(snippets[idx].group("snippet") or "")
+        if is_valid_result_url(link):
+            mentions.append(
+                Mention(
+                    platform=detect_platform(link),
+                    url=link,
+                    title=title,
+                    snippet=snippet,
+                    matched_query=query,
+                    engine="ddg",
+                )
+            )
+    return mentions
 
+
+def parse_bing_results(page_html: str, query: str) -> list[Mention]:
+    mentions: list[Mention] = []
+    pattern = re.compile(
+        r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>.*?<h2>\s*<a[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>\s*</h2>.*?(?:<p>(?P<snippet>.*?)</p>)?',
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(page_html):
+        link = html.unescape(match.group("href"))
+        if not is_valid_result_url(link):
+            continue
         mentions.append(
             Mention(
                 platform=detect_platform(link),
                 url=link,
-                title=title,
-                snippet=snippet,
+                title=clean_text(match.group("title") or ""),
+                snippet=clean_text(match.group("snippet") or ""),
                 matched_query=query,
+                engine="bing",
             )
         )
+    return mentions
 
+
+def parse_google_results(page_html: str, query: str) -> list[Mention]:
+    mentions: list[Mention] = []
+    pattern = re.compile(
+        r'<a[^>]*href="(?P<href>/url\?[^"]+|https?://[^"]+)"[^>]*><h3[^>]*>(?P<title>.*?)</h3></a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(page_html):
+        link = normalize_google_link(html.unescape(match.group("href")))
+        if not is_valid_result_url(link):
+            continue
+        mentions.append(
+            Mention(
+                platform=detect_platform(link),
+                url=link,
+                title=clean_text(match.group("title") or ""),
+                snippet="",
+                matched_query=query,
+                engine="google",
+            )
+        )
     return mentions
 
 
 def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
-    url = ENGINE_URLS[engine].format(query=quote_plus(query))
-    page_html = fetch_html(url, timeout=timeout)
+    page_html = fetch_html(ENGINE_URLS[engine].format(query=quote_plus(query)), timeout=timeout)
     if engine == "ddg":
         return parse_ddg_results(page_html, query)
     if engine == "bing":
@@ -232,89 +235,68 @@ def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
     if engine == "google":
         return parse_google_results(page_html, query)
     return []
-def search_ddg(query: str, timeout: int = 12) -> list[Mention]:
-    url = DUCKDUCKGO_HTML.format(query=quote_plus(query))
-    page_html = fetch_html(url, timeout=timeout)
-    return parse_ddg_results(page_html, query)
 
 
 def run_search(
     artist: str | None,
     song: str | None,
     markets: list[str],
-    timeout: int,
-    engines: list[str],
-) -> list[Mention]:
-    queries = build_queries(artist, song, markets)
-    all_mentions: list[Mention] = []
-
-    for q in queries:
-        for engine in engines:
-            try:
-                all_mentions.extend(search_engine(q, engine=engine, timeout=timeout))
-            except (URLError, HTTPError, TimeoutError, KeyError):
-                continue
+    timeout: int = 12,
+    engines: list[str] | None = None,
     max_queries: int | None = None,
-) -> list[Mention]:
+) -> tuple[list[Mention], SearchDiagnostics]:
+    engines = engines or ["ddg", "bing", "google"]
     queries = build_queries(artist, song, markets)
     if max_queries is not None:
         queries = queries[: max(max_queries, 0)]
-    all_mentions: list[Mention] = []
-    failed_queries = 0
 
-    failed_queries = 0
+    all_mentions: list[Mention] = []
+    attempts = 0
+    failures = 0
     last_error = ""
 
-    for q in queries:
-        try:
-            all_mentions.extend(search_ddg(q, timeout=timeout))
-        except (URLError, HTTPError, TimeoutError):
-            failed_queries += 1
-        except (URLError, HTTPError, TimeoutError) as exc:
-            failed_queries += 1
-            last_error = str(exc)
-            continue
+    for query in queries:
+        for engine in engines:
+            attempts += 1
+            try:
+                all_mentions.extend(search_engine(query, engine=engine, timeout=timeout))
+            except (URLError, HTTPError, TimeoutError, KeyError) as exc:
+                failures += 1
+                last_error = str(exc)
 
-    if queries and failed_queries == len(queries):
-        raise RuntimeError(
-            "All search requests failed. Your network may be blocking duckduckgo.com."
+    diagnostics = SearchDiagnostics(
+        attempted_queries=attempts,
+        failed_queries=failures,
+        last_error=last_error,
+    )
+
+    if attempts and failures == attempts:
+        raise SearchFailedError(
+            "All search requests failed. This usually means your network, proxy, or firewall blocked requests. "
+            f"Last error: {last_error or 'unknown error'}"
         )
 
     seen: set[str] = set()
     deduped: list[Mention] = []
-    for m in all_mentions:
-        if m.url in seen:
+    for mention in all_mentions:
+        if mention.url in seen:
             continue
-        seen.add(m.url)
-        deduped.append(m)
-
-    return deduped
-    diagnostics = SearchDiagnostics(
-        attempted_queries=len(queries),
-        failed_queries=failed_queries,
-        last_error=last_error,
-    )
-
-    if queries and failed_queries == len(queries):
-        raise SearchFailedError(
-            "All search requests failed. This usually means your network, proxy, or firewall blocked the request. "
-            f"Last error: {last_error or 'unknown error'}"
-        )
+        seen.add(mention.url)
+        deduped.append(mention)
 
     return deduped, diagnostics
 
 
 def write_json(path: str, rows: list[Mention]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump([asdict(r) for r in rows], f, ensure_ascii=False, indent=2)
+    with open(path, "w", encoding="utf-8") as file_handle:
+        json.dump([asdict(row) for row in rows], file_handle, ensure_ascii=False, indent=2)
 
 
 def write_csv(path: str, rows: list[Mention]) -> None:
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["engine", "platform", "url", "title", "snippet", "matched_query"])
+    with open(path, "w", encoding="utf-8", newline="") as file_handle:
         writer = csv.DictWriter(
-            f,
-            fieldnames=["platform", "url", "title", "snippet", "matched_query"],
+            file_handle,
+            fieldnames=["engine", "platform", "url", "title", "snippet", "matched_query"],
         )
         writer.writeheader()
         for row in rows:
@@ -349,21 +331,26 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+
     args = parse_args()
-    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout, engines=args.engines)
     try:
-        rows, diagnostics = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+        rows, diagnostics = run_search(
+            args.artist,
+            args.song,
+            args.markets,
+            timeout=args.timeout,
+            engines=args.engines,
+        )
     except SearchFailedError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from exc
 
     rows = rows[: max(args.max_results, 0)]
-
-    print(json.dumps([asdict(r) for r in rows], ensure_ascii=False, indent=2))
+    print(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2))
 
     if diagnostics.failed_queries:
         print(
-            f"\nWarning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} queries failed. "
+            f"\nWarning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} requests failed. "
             "Results may be incomplete.",
             file=sys.stderr,
         )
