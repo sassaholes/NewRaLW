@@ -26,13 +26,6 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     artist = html.escape(form.get("artist", ""))
     song = html.escape(form.get("song", ""))
     max_results = html.escape(form.get("max_results", "0"))
-    timeout = html.escape(form.get("timeout", "4"))
-    max_results = html.escape(form.get("max_results", "20"))
-    timeout = html.escape(form.get("timeout", "4"))
-    selected_markets = set(form.get("markets", "global,douyin,tiktok,youtube").split(","))
-
-    def checked(value: str) -> str:
-        return "checked" if value in selected_markets else ""
     timeout = html.escape(form.get("timeout", "12"))
 
     table_rows = ""

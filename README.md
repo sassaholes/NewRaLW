@@ -141,6 +141,7 @@ py tracker.py --artist "Jay Chou" --song "青花瓷" --markets global douyin --m
 
 - If `py` is not recognized, install Python from python.org and check **“Add Python to PATH”**.
 - If `python` works but `py` does not, replace `py` with `python` in all commands.
+- If you see a Python `SyntaxError`, re-download/update the repo files (the `.bat` launchers now run a compile check first and will show this clearly).
 - If you get zero results, retry with fewer markets and a larger timeout:
 
 ```bat

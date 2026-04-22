@@ -8,6 +8,14 @@ echo If the browser does not open automatically, copy/paste this URL:
 echo   http://127.0.0.1:8000
 echo.
 
+py -m py_compile "%~dp0tracker.py" "%~dp0web_app.py"
+if errorlevel 1 (
+  echo.
+  echo Python files failed to compile. Please update/re-download the project files.
+  pause
+  exit /b 1
+)
+
 start "" "http://127.0.0.1:8000"
 py "%~dp0web_app.py"
 

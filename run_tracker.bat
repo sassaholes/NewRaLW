@@ -14,6 +14,14 @@ if "%~1"=="" (
   exit /b 1
 )
 
+py -m py_compile "%~dp0tracker.py"
+if errorlevel 1 (
+  echo.
+  echo tracker.py has a syntax error. Please update/re-download the project files.
+  pause
+  exit /b 1
+)
+
 REM Pass all command-line arguments to tracker.py
 py "%~dp0tracker.py" %*
 
