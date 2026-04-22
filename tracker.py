@@ -238,8 +238,8 @@ def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
 
 
 def run_search(
-    artist: str | None,
-    song: str | None,
+    artist: Optional[str],
+    song: Optional[str],
     markets: list[str],
     timeout: int,
     engines: list[str],

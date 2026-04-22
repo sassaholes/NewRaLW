@@ -7,6 +7,7 @@ import html
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
+from typing import Optional
 
 from tracker import Mention, SearchFailedError, run_search
 
