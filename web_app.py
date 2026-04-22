@@ -13,7 +13,7 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-from tracker import Mention, run_search
+from tracker import Mention, SearchFailedError, run_search
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -27,6 +27,13 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     song = html.escape(form.get("song", ""))
     max_results = html.escape(form.get("max_results", "0"))
     timeout = html.escape(form.get("timeout", "4"))
+    max_results = html.escape(form.get("max_results", "20"))
+    timeout = html.escape(form.get("timeout", "4"))
+    selected_markets = set(form.get("markets", "global,douyin,tiktok,youtube").split(","))
+
+    def checked(value: str) -> str:
+        return "checked" if value in selected_markets else ""
+    timeout = html.escape(form.get("timeout", "12"))
 
     table_rows = ""
     for r in rows:
@@ -77,10 +84,10 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
       <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
       <br />
-      <label><input type="checkbox" name="markets" value="global" checked /> Global</label>
-      <label><input type="checkbox" name="markets" value="douyin" checked /> Douyin</label>
-      <label><input type="checkbox" name="markets" value="tiktok" checked /> TikTok</label>
-      <label><input type="checkbox" name="markets" value="youtube" checked /> YouTube</label>
+      <label><input type="checkbox" name="markets" value="global" {checked("global")} /> Global</label>
+      <label><input type="checkbox" name="markets" value="douyin" {checked("douyin")} /> Douyin</label>
+      <label><input type="checkbox" name="markets" value="tiktok" {checked("tiktok")} /> TikTok</label>
+      <label><input type="checkbox" name="markets" value="youtube" {checked("youtube")} /> YouTube</label>
       <br /><br />
       <button type="submit">Search</button>
     </form>
@@ -150,6 +157,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "song": song or "",
             "max_results": max_results_raw,
             "timeout": timeout_raw,
+            "markets": ",".join(markets),
         }
 
         try:
@@ -158,6 +166,17 @@ class AppHandler(BaseHTTPRequestHandler):
             rows = run_search(artist, song, markets, timeout=timeout, max_queries=None)
             if max_results > 0:
                 rows = rows[:max_results]
+            rows, diagnostics = run_search(artist, song, markets, timeout=timeout, max_queries=6)
+            rows = rows[:max_results]
+            error = ""
+            if diagnostics.failed_queries:
+                error = (
+                    f"Warning: {diagnostics.failed_queries}/{diagnostics.attempted_queries} requests failed; "
+                    "results may be incomplete."
+                )
+            self._send_html(render_page(rows=rows, form=view_form, error=error))
+        except (ValueError, SearchFailedError) as exc:
+            rows = run_search(artist, song, markets, timeout=timeout)[:max_results]
             self._send_html(render_page(rows=rows, form=view_form))
         except (ValueError, RuntimeError) as exc:
             self._send_html(render_page(error=str(exc), form=view_form), status=400)
