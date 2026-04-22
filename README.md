@@ -46,14 +46,14 @@ Yes — you need the project folder on your PC first.
 
 ```bat
 cd C:\NewRaLW
-run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 ### Option B: Use git clone
 ```bat
 git clone <YOUR_REPO_URL>
 cd NewRaLW
-run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 ## Super simple copy/paste (Windows CMD)
@@ -65,7 +65,7 @@ cd C:\path\to\NewRaLW
 ```
 
 ```bat
-run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 ```bat
@@ -76,6 +76,7 @@ If `run_tracker.bat` does not work, use:
 
 ```bat
 py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 ## Quick start (Windows Command Prompt)
@@ -90,18 +91,21 @@ cd C:\path\to\NewRaLW
 
 ```bat
 py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 3) Or use the included batch wrapper (same result):
 
 ```bat
 run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 4) CSV output example:
 
 ```bat
 py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --csv results.csv
+py tracker.py --artist "Adele" --song "Hello" --csv results.csv
 ```
 
 ## Quick start (macOS/Linux)
@@ -131,6 +135,7 @@ py tracker.py --artist "Jay Chou" --song "青花瓷" --markets global douyin --m
 
 - If `py` is not recognized, install Python from python.org and check **“Add Python to PATH”**.
 - If `python` works but `py` does not, replace `py` with `python` in all commands.
+- If you see a Python `SyntaxError`, re-download/update the repo files (the `.bat` launchers now run a compile check first and will show this clearly).
 - If you get zero results, retry with fewer markets and a larger timeout:
 
 ```bat
