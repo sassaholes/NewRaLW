@@ -1,5 +1,6 @@
 @echo off
 setlocal
+py "%~dp0web_app.py"
 
 echo Starting web app server...
 echo URL: http://127.0.0.1:8000

@@ -13,6 +13,7 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
+from tracker import Mention, run_search
 from tracker import Mention, SearchFailedError, run_search
 
 HOST = "127.0.0.1"
@@ -25,6 +26,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
 
     artist = html.escape(form.get("artist", ""))
     song = html.escape(form.get("song", ""))
+    max_results = html.escape(form.get("max_results", "20"))
     max_results = html.escape(form.get("max_results", "0"))
     timeout = html.escape(form.get("timeout", "12"))
 
@@ -75,6 +77,18 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     <form method="post" action="/search">
       <label>Artist <input name="artist" value="{artist}" placeholder="Adele" /></label>
       <label>Song <input name="song" value="{song}" placeholder="Hello" /></label>
+      <label>Max results <input name="max_results" value="{max_results}" size="4" /></label>
+      <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
+      <br />
+      <label><input type="checkbox" name="markets" value="global" checked /> Global</label>
+      <label><input type="checkbox" name="markets" value="douyin" checked /> Douyin</label>
+      <label><input type="checkbox" name="markets" value="tiktok" checked /> TikTok</label>
+      <label><input type="checkbox" name="markets" value="youtube" checked /> YouTube</label>
+      <br /><br />
+      <strong>Search engines:</strong>
+      <label><input type="checkbox" name="engines" value="ddg" checked /> DuckDuckGo</label>
+      <label><input type="checkbox" name="engines" value="bing" checked /> Bing</label>
+      <label><input type="checkbox" name="engines" value="google" checked /> Google</label>
       <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
       <br />
@@ -143,6 +157,9 @@ class AppHandler(BaseHTTPRequestHandler):
         song = (form.get("song") or [""])[0].strip() or None
 
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
+        engines = form.get("engines") or ["ddg", "bing", "google"]
+        max_results_raw = (form.get("max_results") or ["20"])[0]
+        timeout_raw = (form.get("timeout") or ["12"])[0]
         max_results_raw = (form.get("max_results") or ["0"])[0]
         timeout_raw = (form.get("timeout") or ["12"])[0]
         timeout_raw = (form.get("timeout") or ["4"])[0]
@@ -158,6 +175,9 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             max_results = max(0, int(max_results_raw))
             timeout = max(1, int(timeout_raw))
+            rows = run_search(artist, song, markets, timeout=timeout, engines=engines)[:max_results]
+            self._send_html(render_page(rows=rows, form=view_form))
+        except ValueError as exc:
             rows = run_search(artist, song, markets, timeout=timeout, max_queries=None)
             if max_results > 0:
                 rows = rows[:max_results]

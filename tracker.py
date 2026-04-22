@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""Local CLI to discover artist/song usage mentions across global web markets.
+
+This version supports multiple no-key search engines (DuckDuckGo, Bing, Google).
+"""
 """Local CLI to discover artist/song usage mentions across global web markets."""
 
 from __future__ import annotations
@@ -12,6 +16,14 @@ import sys
 from dataclasses import dataclass, asdict
 from typing import Iterable
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.request import Request, urlopen
+
+ENGINE_URLS = {
+    "ddg": "https://duckduckgo.com/html/?q={query}",
+    "bing": "https://www.bing.com/search?q={query}",
+    "google": "https://www.google.com/search?q={query}&hl=en",
+}
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
@@ -25,6 +37,7 @@ class Mention:
     title: str
     snippet: str
     matched_query: str
+    engine: str
 
 
 @dataclass
@@ -46,6 +59,11 @@ def build_queries(artist: str | None, song: str | None, markets: list[str]) -> l
     base = " ".join(base_bits)
     queries: list[str] = [base]
 
+    usage_terms = ["used in video", "sound trend", "viral clip", "背景音乐", "使用", "热门配乐"]
+    queries.extend([f"{base} {term}" for term in usage_terms])
+
+    if "douyin" in markets:
+        queries.extend([f'site:douyin.com "{base}"', f'douyin "{base}" 音乐', f'douyin "{base}" 使用'])
     usage_terms = [
         "used in video",
         "sound trend",
@@ -105,11 +123,37 @@ def clean_text(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def normalize_google_link(link: str) -> str:
+    # Convert /url?q=https://... form into clean target URLs.
+    if link.startswith("/url?"):
+        parsed = parse_qs(urlparse(link).query)
+        q = parsed.get("q")
+        if q and q[0].startswith("http"):
+            return q[0]
+    return link
+
+
+def is_valid_result_url(link: str) -> bool:
+    if not link:
+        return False
+    if link.startswith("/"):
+        return False
+    if "google.com/search" in link:
+        return False
+    if "accounts.google.com" in link:
+        return False
+    return link.startswith("http")
+
+
 def fetch_html(url: str, timeout: int = 12) -> str:
     req = Request(
         url,
         headers={
             "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             )
@@ -119,6 +163,14 @@ def fetch_html(url: str, timeout: int = 12) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
+    mentions: list[Mention] = []
+    anchor_pattern = re.compile(
+        r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    snippet_pattern = re.compile(
+        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?(?:<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>|<div[^>]*class="result__snippet"[^>]*>(?P<snippet_div>.*?)</div>)',
 def unwrap_ddg_redirect(url: str) -> str:
     """Extract destination URL from DuckDuckGo redirect links when present."""
     parsed = urlparse(url)
@@ -170,6 +222,16 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     return mentions
 
 
+def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
+    url = ENGINE_URLS[engine].format(query=quote_plus(query))
+    page_html = fetch_html(url, timeout=timeout)
+    if engine == "ddg":
+        return parse_ddg_results(page_html, query)
+    if engine == "bing":
+        return parse_bing_results(page_html, query)
+    if engine == "google":
+        return parse_google_results(page_html, query)
+    return []
 def search_ddg(query: str, timeout: int = 12) -> list[Mention]:
     url = DUCKDUCKGO_HTML.format(query=quote_plus(query))
     page_html = fetch_html(url, timeout=timeout)
@@ -181,6 +243,17 @@ def run_search(
     song: str | None,
     markets: list[str],
     timeout: int,
+    engines: list[str],
+) -> list[Mention]:
+    queries = build_queries(artist, song, markets)
+    all_mentions: list[Mention] = []
+
+    for q in queries:
+        for engine in engines:
+            try:
+                all_mentions.extend(search_engine(q, engine=engine, timeout=timeout))
+            except (URLError, HTTPError, TimeoutError, KeyError):
+                continue
     max_queries: int | None = None,
 ) -> list[Mention]:
     queries = build_queries(artist, song, markets)
@@ -215,6 +288,7 @@ def run_search(
         seen.add(m.url)
         deduped.append(m)
 
+    return deduped
     diagnostics = SearchDiagnostics(
         attempted_queries=len(queries),
         failed_queries=failed_queries,
@@ -237,6 +311,7 @@ def write_json(path: str, rows: list[Mention]) -> None:
 
 def write_csv(path: str, rows: list[Mention]) -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["engine", "platform", "url", "title", "snippet", "matched_query"])
         writer = csv.DictWriter(
             f,
             fieldnames=["platform", "url", "title", "snippet", "matched_query"],
@@ -257,6 +332,13 @@ def parse_args() -> argparse.Namespace:
         choices=["global", "douyin", "tiktok", "youtube"],
         help="Target markets/platforms",
     )
+    parser.add_argument(
+        "--engines",
+        nargs="+",
+        default=["ddg", "bing", "google"],
+        choices=["ddg", "bing", "google"],
+        help="Search engines to use",
+    )
     parser.add_argument("--max-results", type=int, default=50, help="Max result rows to keep")
     parser.add_argument("--timeout", type=int, default=12, help="HTTP timeout (seconds)")
     parser.add_argument("--out", type=str, default=None, help="Path to write JSON")
@@ -268,6 +350,7 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
+    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout, engines=args.engines)
     try:
         rows, diagnostics = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
     except SearchFailedError as exc:

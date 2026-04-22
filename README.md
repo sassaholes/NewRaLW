@@ -1,6 +1,6 @@
 # Global Music Usage Finder
 
-A local-first Python CLI app that looks up an **artist name** and/or **song title** and scans multiple web surfaces (including foreign markets such as Douyin) for likely usage mentions.
+A local-first Python app that looks up an **artist name** and/or **song title** and scans multiple web surfaces (including foreign markets such as Douyin) for likely usage mentions. It now supports **no-key** search across DuckDuckGo, Bing, and Google.
 
 > ⚠️ Important: This project is designed for lawful research. Always respect each site's Terms of Service, robots rules, and local laws.
 
@@ -32,18 +32,7 @@ Then open this in your browser:
 http://127.0.0.1:8000
 ```
 
-`run_web_app.bat` now tries to open your browser automatically. If it does not, paste the URL manually.
-
 Type artist/song, click **Search**, and results show in a table.
-
-## Tracker vs Web App (important)
-
-- `tracker.py` = command-line tool (prints JSON in terminal, optional CSV/JSON file output).
-- `web_app.py` = local website UI (form + results table in browser).
-- `run_tracker.bat` runs `tracker.py`, but it needs arguments like `--artist` and/or `--song`.
-- `run_web_app.bat` starts the browser UI server at `http://127.0.0.1:8000`.
-
-If `run_tracker.bat` looked like it did nothing, it was probably started without arguments. It now prints usage/help and an example command.
 
 ## First question: do you need to download files first?
 
@@ -86,6 +75,7 @@ type results.json
 If `run_tracker.bat` does not work, use:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
@@ -100,18 +90,21 @@ cd C:\path\to\NewRaLW
 2) Run with Python launcher (`py`) from CMD:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 py tracker.py --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 3) Or use the included batch wrapper (same result):
 
 ```bat
+run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
 run_tracker.bat --artist "Adele" --song "Hello" --max-results 20 --out results.json
 ```
 
 4) CSV output example:
 
 ```bat
+py tracker.py --artist "Adele" --song "Hello" --engines ddg bing google --csv results.csv
 py tracker.py --artist "Adele" --song "Hello" --csv results.csv
 ```
 
@@ -132,6 +125,7 @@ py tracker.py --artist "Jay Chou" --song "青花瓷" --markets global douyin --m
 - `--artist`: Artist name.
 - `--song`: Song title.
 - `--markets`: One or more of `global`, `douyin`, `tiktok`, `youtube`.
+- `--engines`: One or more of `ddg`, `bing`, `google` (no keys).
 - `--max-results`: Max rows returned.
 - `--out`: JSON output path.
 - `--csv`: CSV output path.
