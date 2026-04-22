@@ -171,9 +171,8 @@ def run_search(
     timeout: int,
     max_queries: int | None = None,
 ) -> tuple[list[Mention], SearchDiagnostics]:
+def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
     queries = build_queries(artist, song, markets)
-    if max_queries is not None:
-        queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
 
     failed_queries = 0
