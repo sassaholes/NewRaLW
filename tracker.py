@@ -153,8 +153,16 @@ def search_ddg(query: str, timeout: int = 12) -> list[Mention]:
     return parse_ddg_results(page_html, query)
 
 
-def run_search(artist: str | None, song: str | None, markets: list[str], timeout: int) -> list[Mention]:
+def run_search(
+    artist: str | None,
+    song: str | None,
+    markets: list[str],
+    timeout: int,
+    max_queries: int | None = None,
+) -> list[Mention]:
     queries = build_queries(artist, song, markets)
+    if max_queries is not None:
+        queries = queries[: max(max_queries, 0)]
     all_mentions: list[Mention] = []
 
     for q in queries:
@@ -202,6 +210,12 @@ def parse_args() -> argparse.Namespace:
         help="Target markets/platforms",
     )
     parser.add_argument("--max-results", type=int, default=50, help="Max result rows to keep")
+    parser.add_argument(
+        "--max-queries",
+        type=int,
+        default=None,
+        help="Limit how many generated queries are executed (default: all)",
+    )
     parser.add_argument("--timeout", type=int, default=12, help="HTTP timeout (seconds)")
     parser.add_argument("--out", type=str, default=None, help="Path to write JSON")
     parser.add_argument("--csv", type=str, default=None, help="Path to write CSV")
@@ -212,7 +226,13 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
-    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout)
+    rows = run_search(
+        args.artist,
+        args.song,
+        args.markets,
+        timeout=args.timeout,
+        max_queries=args.max_queries,
+    )
     rows = rows[: max(args.max_results, 0)]
 
     print(json.dumps([asdict(r) for r in rows], ensure_ascii=False, indent=2))

@@ -25,7 +25,8 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
 
     artist = html.escape(form.get("artist", ""))
     song = html.escape(form.get("song", ""))
-    max_results = html.escape(form.get("max_results", "20"))
+    max_results = html.escape(form.get("max_results", "0"))
+    max_queries = html.escape(form.get("max_queries", "6"))
     timeout = html.escape(form.get("timeout", "12"))
 
     table_rows = ""
@@ -41,6 +42,13 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
 
     error_html = f"<p class='error'>{html.escape(error)}</p>" if error else ""
     results_header = f"<p><strong>{len(rows)}</strong> result(s).</p>" if rows else ""
+    empty_state = (
+        "<p>No results yet. Enter artist/song and click Search. "
+        "If loading is slow, lower Max queries (e.g., 4-6). "
+        "If you keep getting 0 rows, try timeout 12-20 and check network access to duckduckgo.com.</p>"
+        if not rows and not error
+        else ""
+    )
 
     page = f"""
 <!doctype html>
@@ -68,8 +76,9 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     <form method="post" action="/search">
       <label>Artist <input name="artist" value="{artist}" placeholder="Adele" /></label>
       <label>Song <input name="song" value="{song}" placeholder="Hello" /></label>
-      <label>Max results <input name="max_results" value="{max_results}" size="4" /></label>
+      <label>Max results (0 = all) <input name="max_results" value="{max_results}" size="4" /></label>
       <label>Timeout <input name="timeout" value="{timeout}" size="4" /></label>
+      <label>Max queries <input name="max_queries" value="{max_queries}" size="4" /></label>
       <br />
       <label><input type="checkbox" name="markets" value="global" checked /> Global</label>
       <label><input type="checkbox" name="markets" value="douyin" checked /> Douyin</label>
@@ -80,6 +89,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     </form>
     {error_html}
     {results_header}
+    {empty_state}
   </div>
 
   <table>
@@ -135,20 +145,25 @@ class AppHandler(BaseHTTPRequestHandler):
         song = (form.get("song") or [""])[0].strip() or None
 
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
-        max_results_raw = (form.get("max_results") or ["20"])[0]
+        max_results_raw = (form.get("max_results") or ["0"])[0]
+        max_queries_raw = (form.get("max_queries") or ["6"])[0]
         timeout_raw = (form.get("timeout") or ["12"])[0]
 
         view_form = {
             "artist": artist or "",
             "song": song or "",
             "max_results": max_results_raw,
+            "max_queries": max_queries_raw,
             "timeout": timeout_raw,
         }
 
         try:
             max_results = max(0, int(max_results_raw))
+            max_queries = max(1, int(max_queries_raw))
             timeout = max(1, int(timeout_raw))
-            rows = run_search(artist, song, markets, timeout=timeout)[:max_results]
+            rows = run_search(artist, song, markets, timeout=timeout, max_queries=max_queries)
+            if max_results > 0:
+                rows = rows[:max_results]
             self._send_html(render_page(rows=rows, form=view_form))
         except ValueError as exc:
             self._send_html(render_page(error=str(exc), form=view_form), status=400)
