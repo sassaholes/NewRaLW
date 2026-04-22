@@ -1,3 +1,12 @@
+# Global Music Usage Finder (Quick Run)
+
+You only need:
+- Python installed
+- Command Prompt
+
+## Run in browser (Windows)
+
+Copy/paste exactly:
 # Global Music Usage Finder
 
 A local-first Python app that looks up an **artist name** and/or **song title** and scans multiple web surfaces (including foreign markets such as Douyin) for likely usage mentions. It now supports **no-key** search across DuckDuckGo, Bing, and Google.
@@ -17,6 +26,7 @@ cd C:\NewRaLW
 start_app.bat
 ```
 
+Then open:
 ## Easiest way: use it in your browser (no coding)
 
 If you want an app-like experience, do this in **Windows Command Prompt**:
@@ -32,6 +42,28 @@ Then open this in your browser:
 http://127.0.0.1:8000
 ```
 
+Type artist/song and click **Search**.
+
+## If `start_app.bat` fails
+
+```bat
+cd C:\NewRaLW
+run_web_app.bat
+```
+
+Then manually open `http://127.0.0.1:8000`.
+
+## Direct CLI (optional)
+
+```bat
+cd C:\NewRaLW
+run_tracker.bat --artist "Adele" --song "Hello" --engines ddg bing google --max-results 20 --out results.json
+```
+
+## Notes
+- No API keys required.
+- Results depend on search engine availability/network.
+- For platform-level guaranteed coverage, official APIs are still better.
 `run_web_app.bat` now tries to open your browser automatically. If it does not, paste the URL manually.
 
 Type artist/song, click **Search**, and results show in a table.

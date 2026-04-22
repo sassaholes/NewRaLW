@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local CLI to discover artist/song usage mentions across global web markets.
 
+This version supports multiple no-key search engines (DuckDuckGo, Bing, Google).
 Supports no-key search across DuckDuckGo, Bing, and Google.
 """
 
@@ -12,6 +13,10 @@ import html
 import json
 import re
 import sys
+from dataclasses import dataclass, asdict
+from typing import Iterable
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote_plus, urlparse
 from dataclasses import asdict, dataclass
 from typing import Iterable
 from urllib.error import HTTPError, URLError
@@ -35,6 +40,8 @@ class Mention:
     engine: str
 
 
+def build_queries(artist: str | None, song: str | None, markets: list[str]) -> list[str]:
+    base_bits = [b for b in [artist, song] if b]
 @dataclass
 class SearchDiagnostics:
     attempted_queries: int
@@ -69,6 +76,27 @@ def build_queries(artist: str | None, song: str | None, markets: list[str]) -> l
 
 def dedupe_keep_order(items: Iterable[str]) -> list[str]:
     seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        k = item.strip()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
+
+
+def detect_platform(url: str) -> str:
+    u = url.lower()
+    if "douyin.com" in u:
+        return "douyin"
+    if "tiktok.com" in u:
+        return "tiktok"
+    if "youtube.com" in u or "youtu.be" in u:
+        return "youtube"
+    if "instagram.com" in u:
+        return "instagram"
+    if "x.com" in u or "twitter.com" in u:
     output: list[str] = []
     for item in items:
         value = item.strip()
@@ -94,6 +122,19 @@ def detect_platform(url: str) -> str:
     return "web"
 
 
+def clean_text(s: str) -> str:
+    s = html.unescape(s)
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def normalize_google_link(link: str) -> str:
+    # Convert /url?q=https://... form into clean target URLs.
+    if link.startswith("/url?"):
+        parsed = parse_qs(urlparse(link).query)
+        q = parsed.get("q")
+        if q and q[0].startswith("http"):
+            return q[0]
 def clean_text(raw: str) -> str:
     text = html.unescape(raw)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -114,12 +155,16 @@ def is_valid_result_url(link: str) -> bool:
         return False
     if link.startswith("/"):
         return False
+    if "google.com/search" in link:
+        return False
+    if "accounts.google.com" in link:
     if "google.com/search" in link or "accounts.google.com" in link:
         return False
     return link.startswith("http")
 
 
 def fetch_html(url: str, timeout: int = 12) -> str:
+    req = Request(
     request = Request(
         url,
         headers={
@@ -130,6 +175,8 @@ def fetch_html(url: str, timeout: int = 12) -> str:
             "Accept-Language": "en-US,en;q=0.9",
         },
     )
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
     with urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8", errors="replace")
 
@@ -148,6 +195,12 @@ def unwrap_ddg_redirect(url: str) -> str:
 
 def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     mentions: list[Mention] = []
+    anchor_pattern = re.compile(
+        r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    snippet_pattern = re.compile(
+        r'<a[^>]*class="result__a"[^>]*>.*?</a>.*?(?:<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>|<div[^>]*class="result__snippet"[^>]*>(?P<snippet_div>.*?)</div>)',
 
     anchor_pattern = re.compile(
         r'<a[^>]*(?:class="[^"]*result__a[^"]*"|data-testid="result-title-a")[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
@@ -162,6 +215,14 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
     snippets = list(snippet_pattern.finditer(page_html))
 
     for idx, match in enumerate(anchors):
+        link = html.unescape(match.group("href"))
+        title = clean_text(match.group("title"))
+        snippet = ""
+        if idx < len(snippets):
+            snippet = clean_text(snippets[idx].group("snippet") or snippets[idx].group("snippet_div") or "")
+        if not is_valid_result_url(link):
+            continue
+        mentions.append(Mention(detect_platform(link), link, title, snippet, query, "ddg"))
         link = unwrap_ddg_redirect(html.unescape(match.group("href")))
         title = clean_text(match.group("title"))
         snippet = clean_text(snippets[idx].group("snippet")) if idx < len(snippets) else ""
@@ -182,6 +243,22 @@ def parse_ddg_results(page_html: str, query: str) -> list[Mention]:
 
 def parse_bing_results(page_html: str, query: str) -> list[Mention]:
     mentions: list[Mention] = []
+    block_pattern = re.compile(r'<li[^>]*class="b_algo"[^>]*>(?P<block>.*?)</li>', re.IGNORECASE | re.DOTALL)
+    link_pattern = re.compile(r'<h2>\s*<a[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>', re.IGNORECASE | re.DOTALL)
+    snippet_pattern = re.compile(r'<p>(?P<snippet>.*?)</p>', re.IGNORECASE | re.DOTALL)
+
+    for b in block_pattern.finditer(page_html):
+        block = b.group("block")
+        link_m = link_pattern.search(block)
+        if not link_m:
+            continue
+        link = html.unescape(link_m.group("href"))
+        if not is_valid_result_url(link):
+            continue
+        title = clean_text(link_m.group("title"))
+        sn_m = snippet_pattern.search(block)
+        snippet = clean_text(sn_m.group("snippet")) if sn_m else ""
+        mentions.append(Mention(detect_platform(link), link, title, snippet, query, "bing"))
     pattern = re.compile(
         r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>.*?<h2>\s*<a[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>\s*</h2>.*?(?:<p>(?P<snippet>.*?)</p>)?',
         re.IGNORECASE | re.DOTALL,
@@ -205,6 +282,18 @@ def parse_bing_results(page_html: str, query: str) -> list[Mention]:
 
 def parse_google_results(page_html: str, query: str) -> list[Mention]:
     mentions: list[Mention] = []
+    # Basic parser for standard Google result blocks.
+    anchor_pattern = re.compile(r'<a[^>]*href="(?P<href>/url\?q=[^"]+)"[^>]*>(?P<title>.*?)</a>', re.IGNORECASE | re.DOTALL)
+
+    for a in anchor_pattern.finditer(page_html):
+        link = normalize_google_link(html.unescape(a.group("href")))
+        if not is_valid_result_url(link):
+            continue
+        title = clean_text(a.group("title"))
+        if not title or title.lower() in {"cached", "similar"}:
+            continue
+        mentions.append(Mention(detect_platform(link), link, title, "", query, "google"))
+
     pattern = re.compile(
         r'<a[^>]*href="(?P<href>/url\?[^"]+|https?://[^"]+)"[^>]*><h3[^>]*>(?P<title>.*?)</h3></a>',
         re.IGNORECASE | re.DOTALL,
@@ -227,6 +316,8 @@ def parse_google_results(page_html: str, query: str) -> list[Mention]:
 
 
 def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
+    url = ENGINE_URLS[engine].format(query=quote_plus(query))
+    page_html = fetch_html(url, timeout=timeout)
     page_html = fetch_html(ENGINE_URLS[engine].format(query=quote_plus(query)), timeout=timeout)
     if engine == "ddg":
         return parse_ddg_results(page_html, query)
@@ -238,6 +329,8 @@ def search_engine(query: str, engine: str, timeout: int = 12) -> list[Mention]:
 
 
 def run_search(
+    artist: str | None,
+    song: str | None,
     artist: Optional[str],
     song: Optional[str],
     markets: list[str],
@@ -255,6 +348,26 @@ def run_search(
                 all_mentions.extend(search_engine(q, engine=engine, timeout=timeout))
             except (URLError, HTTPError, TimeoutError, KeyError):
                 continue
+
+    seen: set[str] = set()
+    deduped: list[Mention] = []
+    for m in all_mentions:
+        if m.url in seen:
+            continue
+        seen.add(m.url)
+        deduped.append(m)
+
+    return deduped
+
+
+def write_json(path: str, rows: list[Mention]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([asdict(r) for r in rows], f, ensure_ascii=False, indent=2)
+
+
+def write_csv(path: str, rows: list[Mention]) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["engine", "platform", "url", "title", "snippet", "matched_query"])
     max_queries: int | None = None,
 ) -> tuple[list[Mention], SearchDiagnostics]:
     engines = engines or ["ddg", "bing", "google"]
@@ -349,6 +462,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    args = parse_args()
+    rows = run_search(args.artist, args.song, args.markets, timeout=args.timeout, engines=args.engines)
+    rows = rows[: max(args.max_results, 0)]
+
+    print(json.dumps([asdict(r) for r in rows], ensure_ascii=False, indent=2))
 
     args = parse_args()
     try:
