@@ -50,6 +50,7 @@ def render_page(rows: list[Mention] | None = None, error: str = "", form: dict[s
     results_header = f"<p><strong>{len(rows)}</strong> result(s).</p>" if rows else ""
     empty_state = (
         "<p>No results yet. Enter artist/song and click Search. "
+        "If you keep getting 0 rows, try timeout 12-20 and check network access to duckduckgo.com.</p>"
         "If you keep getting 0 rows, try timeout 10-20 and check network access to duckduckgo.com.</p>"
         if not rows and not error
         else ""
@@ -150,6 +151,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         markets = form.get("markets") or ["global", "douyin", "tiktok", "youtube"]
         max_results_raw = (form.get("max_results") or ["0"])[0]
+        timeout_raw = (form.get("timeout") or ["12"])[0]
         timeout_raw = (form.get("timeout") or ["4"])[0]
 
         view_form = {
